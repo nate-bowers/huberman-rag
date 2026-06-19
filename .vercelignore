@@ -1,0 +1,9 @@
+# Not needed for the Next.js build — keep the deploy small.
+data/
+huberman_transcripts/
+scripts/
+supabase/
+eval/
+DECISIONS.md
+.env
+*.log

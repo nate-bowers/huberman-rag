@@ -8,10 +8,18 @@
  * bge models are asymmetric: queries get a short instruction prefix, passages
  * do not. We expose embedQuery / embedPassages to keep that distinction explicit.
  */
-import { pipeline, type FeatureExtractionPipeline } from "@huggingface/transformers";
+import { pipeline, env, type FeatureExtractionPipeline } from "@huggingface/transformers";
 
 export const EMBED_MODEL = "Xenova/bge-small-en-v1.5";
 export const EMBED_DIM = 384;
+
+// On Vercel, the native onnxruntime-node package is excluded from the bundle
+// (too large), so use the WASM backend, and cache model files in /tmp (the only
+// writable dir). Locally (ingest), the default native backend is used — faster.
+const ON_VERCEL = Boolean(process.env.VERCEL);
+if (ON_VERCEL) {
+  env.cacheDir = "/tmp/transformers-cache";
+}
 
 // bge-small-en-v1.5 recommended retrieval instruction for the QUERY side only.
 const QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: ";
@@ -25,7 +33,8 @@ function getExtractor(): Promise<FeatureExtractionPipeline> {
   if (!extractorPromise) {
     extractorPromise = pipeline(
       "feature-extraction",
-      EMBED_MODEL
+      EMBED_MODEL,
+      ON_VERCEL ? { device: "wasm" } : undefined
     ) as unknown as Promise<FeatureExtractionPipeline>;
   }
   return extractorPromise;

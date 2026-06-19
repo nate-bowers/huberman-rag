@@ -27,3 +27,4 @@ DECISIONS.md
 # misc
 .DS_Store
 *.log
+.vercel

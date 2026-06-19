@@ -31,6 +31,10 @@ export async function POST(req: Request) {
   if (!query || typeof query !== "string") {
     return new Response("Missing query", { status: 400 });
   }
+  // Basic abuse guard: cap input size (a public endpoint spends LLM tokens).
+  if (query.length > 500) {
+    return new Response("Query too long (max 500 chars)", { status: 413 });
+  }
 
   // 1. Embed query + 2. hybrid retrieve
   const queryEmbedding = await embedQuery(query);
