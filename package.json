@@ -1,0 +1,38 @@
+{
+  "name": "huberman-rag",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "ingest:parse": "tsx scripts/parse.ts",
+    "ingest:chunk": "tsx scripts/chunk.ts",
+    "ingest:context": "tsx scripts/context.ts",
+    "ingest:embed": "tsx scripts/embed.ts",
+    "ingest:upload": "tsx scripts/upload.ts",
+    "ingest:all": "tsx scripts/run-all.ts",
+    "search": "tsx scripts/search-local.ts",
+    "eval": "tsx scripts/eval.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/groq": "^2.0.0",
+    "@ai-sdk/react": "^3.0.210",
+    "@huggingface/transformers": "^3.7.6",
+    "@supabase/supabase-js": "^2.95.0",
+    "ai": "^5.0.0",
+    "next": "^15.5.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "dotenv": "^16.4.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.0"
+  }
+}

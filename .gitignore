@@ -1,0 +1,29 @@
+# deps
+node_modules
+.pnpm-store
+
+# next
+.next
+out
+next-env.d.ts
+*.tsbuildinfo
+
+# env / secrets
+.env
+.env*.local
+
+# ingestion artifacts (regenerate via pnpm ingest:*) — large, derived
+/data/
+
+# raw transcripts: copyrighted source material, not redistributed
+/huberman_transcripts/
+
+# private decision log — kept local, not published
+DECISIONS.md
+
+# transformers.js model cache
+.cache
+
+# misc
+.DS_Store
+*.log
