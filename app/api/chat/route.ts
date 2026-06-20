@@ -124,8 +124,13 @@ export async function POST(req: Request) {
     "- Answer strictly from the excerpts. If they don't contain the answer, say so plainly.\n" +
     "- Cite sources inline with ASCII bracketed numbers like [1], [2] (never 【1】) that map to the excerpts.\n" +
     "- Be specific: name protocols, durations, and mechanisms when the excerpts give them.\n" +
-    "- Use light Markdown: short paragraphs, **bold** for key terms, and '- ' bullet lists where helpful.\n" +
-    "- Be concise and clear. Do not invent studies, numbers, or recommendations.\n" +
+    "Formatting (write for a reader, keep it clean):\n" +
+    "- Open with a direct 1-2 sentence answer in plain prose — no heading before it.\n" +
+    "- If the answer has natural sections, use a Markdown '## ' heading per section (short title). " +
+    "Do NOT use bold text as a fake heading.\n" +
+    "- Default to short paragraphs. Use a '- ' bullet list ONLY for genuine lists (steps, options, doses) — never for every line.\n" +
+    "- Use **bold** rarely, only to highlight a key term or number inline.\n" +
+    "- Keep it concise. Do not invent studies, numbers, or recommendations.\n" +
     "- Use the prior conversation to resolve references (e.g. 'it', 'that dose').\n" +
     "- After the answer, output a line containing exactly '###FOLLOWUPS###', then 3 short follow-up " +
     "questions a curious listener might ask next (one per line, starting with '- '), each answerable " +

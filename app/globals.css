@@ -120,17 +120,17 @@ a { color: inherit; }
 .bubble.assistant { background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
 .cite { color: var(--accent-deep); font-weight: 700; }
 
-.sources { margin-top: 12px; display: grid; gap: 5px; }
-.sources-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
-  color: var(--faint); font-weight: 700; margin-bottom: 2px; }
-.source { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+/* sources as tight wrapping pills (one or two lines total) */
+.sources { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sources-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--faint); font-weight: 700; margin-right: 2px; }
+.srcpill { display: inline-flex; align-items: center; gap: 6px; max-width: 280px;
   text-decoration: none; background: var(--surface); border: 1px solid var(--border);
-  border-radius: 9px; padding: 7px 11px; transition: all .15s; }
-.source:hover { border-color: var(--accent); background: var(--accent-wash); }
-.source .title { font-size: 13px; font-weight: 600; color: var(--ink);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.source .meta { font-size: 11.5px; color: var(--muted); white-space: nowrap; display: flex; gap: 9px; align-items: center; }
-.ts { color: var(--accent-deep); font-weight: 650; }
+  border-radius: 999px; padding: 4px 10px; font-size: 12px; transition: all .15s; }
+.srcpill:hover { border-color: var(--accent); background: var(--accent-wash); }
+.srcpill .cite { color: var(--accent-deep); font-weight: 700; }
+.srcpill .pill-title { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srcpill .ts { color: var(--accent-deep); font-weight: 650; white-space: nowrap; }
 .badge { font-size: 10.5px; color: var(--accent-deep); background: var(--accent-wash);
   border-radius: 5px; padding: 1px 6px; font-weight: 600; }
 
@@ -159,26 +159,34 @@ a { color: inherit; }
 /* keep hero content above the decorative wave (NOT .dock — it must stay fixed) */
 .hero, .topbar, .thread { position: relative; z-index: 1; }
 
-/* thinking dots */
-.thinking { display: inline-flex; gap: 5px; align-items: center; padding: 2px 0; }
-.thinking span {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
-  opacity: 0.4; animation: blink 1.2s infinite ease-in-out;
+/* skeleton shimmer loader */
+.skeleton { display: flex; flex-direction: column; gap: 9px; padding: 2px 0; }
+.skeleton span {
+  height: 11px; border-radius: 6px;
+  background: linear-gradient(90deg, #eef3f8 25%, #dde8f2 37%, #eef3f8 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.3s ease-in-out infinite;
 }
-.thinking span:nth-child(2) { animation-delay: 0.2s; }
-.thinking span:nth-child(3) { animation-delay: 0.4s; }
-@keyframes blink { 0%,80%,100% { opacity: 0.25; transform: scale(0.85); } 40% { opacity: 1; transform: scale(1); } }
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 
 /* inline citation links inside answers */
 .bubble.assistant a.cite { text-decoration: none; }
 .bubble.assistant a.cite:hover { text-decoration: underline; }
 
 /* markdown inside answers */
-.bubble.assistant p { margin: 0 0 10px; }
+.bubble.assistant { font-size: 15px; line-height: 1.65; }
+.bubble.assistant p { margin: 0 0 12px; }
 .bubble.assistant p:last-child { margin-bottom: 0; }
-.bubble.assistant ul, .bubble.assistant ol { margin: 6px 0 10px; padding-left: 22px; }
-.bubble.assistant li { margin: 3px 0; }
-.bubble.assistant strong { color: var(--ink); font-weight: 700; }
+.bubble.assistant ul, .bubble.assistant ol { margin: 8px 0 12px; padding-left: 20px; }
+.bubble.assistant li { margin: 4px 0; padding-left: 2px; }
+.bubble.assistant strong { color: var(--ink); font-weight: 650; }
+/* section headings — visually distinct from bold body text */
+.bubble.assistant .ans-h {
+  font-size: 16px; font-weight: 700; color: var(--ink);
+  margin: 16px 0 7px; letter-spacing: -0.01em;
+}
+.bubble.assistant .ans-h:first-child { margin-top: 0; }
+.bubble.assistant .ans-h.sub { font-size: 14px; color: var(--accent-deep); margin: 13px 0 5px; }
 
 /* disclaimer */
 .disclaimer { color: var(--faint); font-size: 11.5px; }

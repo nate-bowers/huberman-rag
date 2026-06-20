@@ -57,23 +57,29 @@ function inlineRender(text: string, sources: Source[] | undefined, key: string) 
   });
 }
 
-// Light Markdown: paragraphs + bullet/numbered lists, with inline formatting.
+// Light Markdown: headings + paragraphs + bullet/numbered lists, inline formatting.
 function renderMarkdown(text: string, sources?: Source[]) {
   const lines = text.split(/\n/);
-  type Block = { type: "p" | "ul" | "ol"; lines: string[] };
+  type Block = { type: "p" | "ul" | "ol" | "h"; lines: string[]; level?: number };
   const blocks: Block[] = [];
   let list: Block | null = null;
   const flush = () => { if (list) { blocks.push(list); list = null; } };
   for (const line of lines) {
     if (/^\s*([-*_])\1{2,}\s*$/.test(line)) { flush(); continue; } // skip --- rules
+    const h = line.match(/^\s*(#{1,4})\s+(.*)/);
     const ul = line.match(/^\s*[-*•]\s+(.*)/);
     const ol = line.match(/^\s*\d+\.\s+(.*)/);
-    if (ul) { if (!list || list.type !== "ul") { flush(); list = { type: "ul", lines: [] }; } list.lines.push(ul[1]); }
+    if (h) { flush(); blocks.push({ type: "h", level: h[1].length, lines: [h[2]] }); }
+    else if (ul) { if (!list || list.type !== "ul") { flush(); list = { type: "ul", lines: [] }; } list.lines.push(ul[1]); }
     else if (ol) { if (!list || list.type !== "ol") { flush(); list = { type: "ol", lines: [] }; } list.lines.push(ol[1]); }
     else { flush(); if (line.trim()) blocks.push({ type: "p", lines: [line] }); }
   }
   flush();
   return blocks.map((b, i) => {
+    if (b.type === "h") {
+      const cls = (b.level ?? 2) <= 2 ? "ans-h" : "ans-h sub";
+      return <div key={i} className={cls}>{inlineRender(b.lines[0], sources, `h${i}`)}</div>;
+    }
     if (b.type === "p") return <p key={i}>{inlineRender(b.lines[0], sources, `p${i}`)}</p>;
     const items = b.lines.map((l, j) => <li key={j}>{inlineRender(l, sources, `l${i}-${j}`)}</li>);
     return b.type === "ul" ? <ul key={i}>{items}</ul> : <ol key={i}>{items}</ol>;
@@ -343,21 +349,30 @@ export default function Home() {
               {turn.role === "assistant"
                 ? turn.text
                   ? renderMarkdown(turn.text, turn.sources)
-                  : <span className="thinking"><span></span><span></span><span></span></span>
+                  : (
+                    <div className="skeleton" aria-label="Searching the transcripts…">
+                      <span style={{ width: "92%" }} />
+                      <span style={{ width: "100%" }} />
+                      <span style={{ width: "74%" }} />
+                    </div>
+                  )
                 : turn.text}
             </div>
             {turn.sources && turn.sources.length > 0 && (
               <div className="sources">
-                <div className="sources-label">Sources</div>
+                <span className="sources-label">Sources</span>
                 {turn.sources.map((s) => (
-                  <a className="source" key={s.n} href={s.url} target="_blank" rel="noreferrer" title={s.snippet}>
-                    <span className="title">
-                      <span className="cite">[{s.n}]</span> {s.title}
-                    </span>
-                    <span className="meta">
-                      {s.timestamp && <span className="ts">▶ {s.timestamp}</span>}
-                      <span>{s.date}</span>
-                    </span>
+                  <a
+                    className="srcpill"
+                    key={s.n}
+                    href={s.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`${s.title} (${s.date})${s.timestamp ? " · " + s.timestamp : ""}`}
+                  >
+                    <span className="cite">{s.n}</span>
+                    <span className="pill-title">{s.title}</span>
+                    {s.timestamp && <span className="ts">▶{s.timestamp}</span>}
                   </a>
                 ))}
               </div>
