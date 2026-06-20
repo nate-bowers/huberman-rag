@@ -21,9 +21,12 @@ import { createGroq } from "@ai-sdk/groq";
 import { generateText } from "ai";
 import { semanticRanked, keywordRanked, rrfFuse, type Row } from "../lib/retrieval.ts";
 import { embedQuery } from "../lib/embeddings.ts";
+import { rerank } from "../lib/rerank.ts";
 
 const K = 6;
-const golden: { q: string }[] = JSON.parse(readFileSync("eval/golden.json", "utf8"));
+const RERANK_POOL = 30; // hybrid candidates handed to the cross-encoder
+const FAITH_SAMPLE = 25; // faithfulness is slow; sample rather than all 100
+const golden: { q: string; level?: string }[] = JSON.parse(readFileSync("eval/golden.json", "utf8"));
 const rows: Row[] = readFileSync("data/embedded.jsonl", "utf8")
   .split("\n")
   .filter((l) => l.trim())
@@ -56,8 +59,8 @@ const judgments: Record<string, 0 | 1> = existsSync("data/eval-judgments.json")
   ? JSON.parse(readFileSync("data/eval-judgments.json", "utf8"))
   : {};
 
-async function judgeRelevance(qi: number, q: string, row: Row): Promise<0 | 1> {
-  const key = `${qi}::${row.id}`;
+async function judgeRelevance(q: string, row: Row): Promise<0 | 1> {
+  const key = `${q}::${row.id}`; // keyed by question text, robust to reordering
   if (key in judgments) return judgments[key];
   await pace(350);
   const { text, usage } = await generateText({
@@ -118,85 +121,92 @@ async function faithfulness(q: string, contextRows: Row[]): Promise<number | nul
 }
 
 // ── run ──────────────────────────────────────────────────────────────────────
-const agg = {
-  semantic: { p1: 0, hit: 0, rr: 0, ndcg: 0 },
-  keyword: { p1: 0, hit: 0, rr: 0, ndcg: 0 },
-  hybrid: { p1: 0, hit: 0, rr: 0, ndcg: 0 },
+const METHODS = ["semantic", "keyword", "hybrid", "hybrid_rerank"] as const;
+type Method = (typeof METHODS)[number];
+const blank = () => ({ p1: 0, hit: 0, rr: 0, ndcg: 0 });
+const agg: Record<Method, ReturnType<typeof blank>> = {
+  semantic: blank(), keyword: blank(), hybrid: blank(), hybrid_rerank: blank(),
 };
+// per-difficulty hit-rate for the best method (hybrid_rerank)
+const byLevel: Record<string, { hit: number; n: number }> = {};
 const faithScores: number[] = [];
 
-console.log(`Evaluating ${golden.length} questions over ${rows.length.toLocaleString()} chunks (LLM-judged relevance)…\n`);
+console.log(`Evaluating ${golden.length} questions over ${rows.length.toLocaleString()} chunks (LLM-judged)…\n`);
 
 for (let qi = 0; qi < golden.length; qi++) {
   const q = golden[qi].q;
+  const level = golden[qi].level ?? "n/a";
   const qVec = await embedQuery(q);
-  const semIds = semanticRanked(qVec, rows).slice(0, K).map((x) => x.id);
-  const kwIds = keywordRanked(q, rows).slice(0, K).map((x) => x.id);
-  const hyIds = rrfFuse(semanticRanked(qVec, rows), keywordRanked(q, rows)).slice(0, K).map((x) => x.id);
 
-  // Judge the pooled candidate set once.
-  const pool = [...new Set([...semIds, ...kwIds, ...hyIds])];
+  const sem = semanticRanked(qVec, rows);
+  const kw = keywordRanked(q, rows);
+  const hybridFull = rrfFuse(sem, kw);
+
+  const semIds = sem.slice(0, K).map((x) => x.id);
+  const kwIds = kw.slice(0, K).map((x) => x.id);
+  const hyIds = hybridFull.slice(0, K).map((x) => x.id);
+
+  // hybrid → cross-encoder rerank of the top RERANK_POOL candidates → top K
+  const poolForRerank = hybridFull.slice(0, RERANK_POOL).map((x) => byId.get(x.id)!);
+  const reranked = await rerank(q, poolForRerank.map((r) => ({ id: r.id, text: r.text })));
+  const rrIds = reranked.slice(0, K).map((x) => x.id);
+
+  const ids: Record<Method, string[]> = { semantic: semIds, keyword: kwIds, hybrid: hyIds, hybrid_rerank: rrIds };
+
+  // Judge the pooled candidate set of all methods once (cached).
+  const poolToJudge = [...new Set(METHODS.flatMap((mm) => ids[mm]))];
   const rel = new Map<string, number>();
-  for (const id of pool) rel.set(id, await judgeRelevance(qi, q, byId.get(id)!));
+  for (const id of poolToJudge) rel.set(id, await judgeRelevance(q, byId.get(id)!));
   writeFileSync("data/eval-judgments.json", JSON.stringify(judgments));
   const relevantInPool = [...rel.values()].filter((r) => r === 1).length;
 
-  const m = {
-    semantic: metricsFor(semIds.map((id) => rel.get(id)!), relevantInPool),
-    keyword: metricsFor(kwIds.map((id) => rel.get(id)!), relevantInPool),
-    hybrid: metricsFor(hyIds.map((id) => rel.get(id)!), relevantInPool),
-  };
-  for (const k of ["semantic", "keyword", "hybrid"] as const) {
-    agg[k].p1 += m[k].p1;
-    agg[k].hit += m[k].hit;
-    agg[k].rr += m[k].rr;
-    agg[k].ndcg += m[k].ndcg;
+  for (const mm of METHODS) {
+    const m = metricsFor(ids[mm].map((id) => rel.get(id)!), relevantInPool);
+    agg[mm].p1 += m.p1; agg[mm].hit += m.hit; agg[mm].rr += m.rr; agg[mm].ndcg += m.ndcg;
   }
+  byLevel[level] ??= { hit: 0, n: 0 };
+  byLevel[level].n++;
+  byLevel[level].hit += metricsFor(rrIds.map((id) => rel.get(id)!), relevantInPool).hit;
 
-  try {
-    const f = await faithfulness(q, hyIds.map((id) => byId.get(id)!));
-    if (f != null) faithScores.push(f);
-  } catch (e: any) {
-    console.warn(`  ! faithfulness skipped for "${q.slice(0, 36)}…": ${e?.message ?? e}`);
+  // Faithfulness on a sample (slow), using the reranked context.
+  if (qi < FAITH_SAMPLE) {
+    try {
+      const f = await faithfulness(q, rrIds.map((id) => byId.get(id)!));
+      if (f != null) faithScores.push(f);
+    } catch (e: any) {
+      console.warn(`  ! faithfulness skipped: ${e?.message ?? e}`);
+    }
   }
-  console.log(`  [${qi + 1}/${golden.length}] ${relevantInPool} relevant in pool · "${q.slice(0, 48)}…"`);
+  console.log(`  [${qi + 1}/${golden.length}] ${level.padEnd(6)} ${relevantInPool} rel · "${q.slice(0, 44)}…"`);
 }
 
 const n = golden.length;
 const pct = (x: number) => ((x / n) * 100).toFixed(1) + "%";
 const f3 = (x: number) => (x / n).toFixed(3);
 
-console.log(`\nRetrieval ablation (k=${K}, LLM-judged relevance):`);
-console.log(`  method        P@1     hit@${K}    MRR     nDCG@${K}`);
-for (const k of ["semantic", "keyword", "hybrid"] as const) {
-  const label = (k === "hybrid" ? "hybrid (RRF)" : k).padEnd(12);
-  console.log(`  ${label}  ${pct(agg[k].p1).padStart(6)}  ${pct(agg[k].hit).padStart(6)}  ${f3(agg[k].rr)}  ${f3(agg[k].ndcg)}`);
+console.log(`\nRetrieval ablation (k=${K}, LLM-judged relevance, n=${n}):`);
+console.log(`  method          P@1     hit@${K}    MRR     nDCG@${K}`);
+for (const mm of METHODS) {
+  console.log(`  ${mm.padEnd(14)}  ${pct(agg[mm].p1).padStart(6)}  ${pct(agg[mm].hit).padStart(6)}  ${f3(agg[mm].rr)}  ${f3(agg[mm].ndcg)}`);
+}
+console.log(`\nhybrid_rerank hit@${K} by difficulty:`);
+for (const lvl of ["easy", "medium", "hard"]) {
+  if (byLevel[lvl]) console.log(`  ${lvl.padEnd(8)} ${((byLevel[lvl].hit / byLevel[lvl].n) * 100).toFixed(1)}%  (n=${byLevel[lvl].n})`);
 }
 
 const avgFaith = faithScores.length ? faithScores.reduce((a, b) => a + b, 0) / faithScores.length : null;
-console.log(
-  avgFaith != null
-    ? `\nGeneration faithfulness (LLM-judge, n=${faithScores.length}): ${avgFaith.toFixed(3)} (0-1)`
-    : `\n(faithfulness unavailable)`
-);
+console.log(avgFaith != null ? `\nFaithfulness (LLM-judge, n=${faithScores.length}): ${avgFaith.toFixed(3)} (0-1)` : `\n(faithfulness unavailable)`);
 
 writeFileSync(
   "data/eval-results.json",
   JSON.stringify(
     {
-      k: K,
-      chunks: rows.length,
-      questions: n,
-      ablation: Object.fromEntries(
-        (["semantic", "keyword", "hybrid"] as const).map((k) => [
-          k,
-          { p1: agg[k].p1 / n, hit: agg[k].hit / n, mrr: agg[k].rr / n, ndcg: agg[k].ndcg / n },
-        ])
-      ),
+      k: K, chunks: rows.length, questions: n,
+      ablation: Object.fromEntries(METHODS.map((mm) => [mm, { p1: agg[mm].p1 / n, hit: agg[mm].hit / n, mrr: agg[mm].rr / n, ndcg: agg[mm].ndcg / n }])),
+      byLevel: Object.fromEntries(Object.entries(byLevel).map(([k, v]) => [k, { hit: v.hit / v.n, n: v.n }])),
       faithfulness: avgFaith,
     },
-    null,
-    2
+    null, 2
   )
 );
 console.log(`\nwrote data/eval-results.json`);
