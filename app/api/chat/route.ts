@@ -131,6 +131,8 @@ export async function POST(req: Request) {
     "- Default to short paragraphs. Use a '- ' bullet list ONLY for genuine lists (steps, options, doses) — never for every line.\n" +
     "- Use **bold** rarely, only to highlight a key term or number inline.\n" +
     "- Keep it concise. Do not invent studies, numbers, or recommendations.\n" +
+    "- Do NOT write a 'References', 'Sources', or 'Citations' list — cite only inline with [n]. " +
+    "The app shows the sources separately, so a list at the end is redundant.\n" +
     "- Use the prior conversation to resolve references (e.g. 'it', 'that dose').\n" +
     "- After the answer, output a line containing exactly '###FOLLOWUPS###', then 3 short follow-up " +
     "questions a curious listener might ask next (one per line, starting with '- '), each answerable " +
