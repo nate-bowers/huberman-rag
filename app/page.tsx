@@ -325,7 +325,7 @@ export default function Home() {
       <div className="thread">
         {turns.map((turn, i) => (
           <div className="msg" key={i}>
-            <div className="role">{turn.role === "user" ? "You" : "Huberman RAG"}</div>
+            <div className="role">{turn.role === "user" ? "You" : "Huberman GPT"}</div>
             <div className={`bubble ${turn.role}`}>
               {turn.role === "assistant"
                 ? turn.text
@@ -335,18 +335,16 @@ export default function Home() {
             </div>
             {turn.sources && turn.sources.length > 0 && (
               <div className="sources">
+                <div className="sources-label">Sources</div>
                 {turn.sources.map((s) => (
-                  <a className="source" key={s.n} href={s.url} target="_blank" rel="noreferrer">
-                    <div className="top">
-                      <span className="title">
-                        <span className="cite">[{s.n}]</span> {s.title}
-                      </span>
-                      <span className="meta">
-                        <span>{s.date}</span>
-                        {s.timestamp && <span className="ts">▶ {s.timestamp}</span>}
-                      </span>
-                    </div>
-                    <div className="snippet">{s.snippet}</div>
+                  <a className="source" key={s.n} href={s.url} target="_blank" rel="noreferrer" title={s.snippet}>
+                    <span className="title">
+                      <span className="cite">[{s.n}]</span> {s.title}
+                    </span>
+                    <span className="meta">
+                      {s.timestamp && <span className="ts">▶ {s.timestamp}</span>}
+                      <span>{s.date}</span>
+                    </span>
                   </a>
                 ))}
               </div>
