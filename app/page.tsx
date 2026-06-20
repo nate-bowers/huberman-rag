@@ -15,6 +15,12 @@ type Source = {
 
 type Turn = { role: "user" | "assistant"; text: string; sources?: Source[]; followups?: string[] };
 
+// Some models emit full-width citation brackets 【1】; normalize to ASCII [1] so
+// they render as clickable links.
+function normalizeCitations(s: string): string {
+  return s.replace(/【\s*(\d+)\s*】/g, "[$1]");
+}
+
 function splitFollowups(raw: string): { answer: string; followups: string[] } {
   const idx = raw.indexOf(FOLLOWUPS_DELIM);
   if (idx === -1) return { answer: raw, followups: [] };
@@ -229,7 +235,7 @@ export default function Home() {
         if (done) break;
         acc += decoder.decode(value, { stream: true });
         // Hide the follow-ups block while streaming (show only the answer part).
-        const shown = acc.split(FOLLOWUPS_DELIM)[0];
+        const shown = normalizeCitations(acc.split(FOLLOWUPS_DELIM)[0]);
         setTurns((t) => {
           const c = [...t];
           c[c.length - 1] = { ...c[c.length - 1], role: "assistant", text: shown, sources };
@@ -240,7 +246,7 @@ export default function Home() {
       const { answer, followups } = splitFollowups(acc);
       setTurns((t) => {
         const c = [...t];
-        c[c.length - 1] = { role: "assistant", text: answer, sources, followups };
+        c[c.length - 1] = { role: "assistant", text: normalizeCitations(answer), sources, followups };
         return c;
       });
     } catch {

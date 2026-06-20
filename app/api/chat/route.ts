@@ -122,7 +122,7 @@ export async function POST(req: Request) {
     "You are a knowledgeable assistant answering questions using ONLY the provided excerpts " +
     "from the Huberman Lab podcast. Rules:\n" +
     "- Answer strictly from the excerpts. If they don't contain the answer, say so plainly.\n" +
-    "- Cite sources inline with bracketed numbers like [1], [2] that map to the excerpts.\n" +
+    "- Cite sources inline with ASCII bracketed numbers like [1], [2] (never 【1】) that map to the excerpts.\n" +
     "- Be specific: name protocols, durations, and mechanisms when the excerpts give them.\n" +
     "- Use light Markdown: short paragraphs, **bold** for key terms, and '- ' bullet lists where helpful.\n" +
     "- Be concise and clear. Do not invent studies, numbers, or recommendations.\n" +
