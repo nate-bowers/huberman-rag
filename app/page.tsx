@@ -195,11 +195,17 @@ export default function Home() {
     setInput("");
     setTurns((t) => [...t, { role: "user", text: q }, { role: "assistant", text: "" }]);
 
+    // Recent conversation (before this turn) so the server can resolve follow-ups.
+    const history = turns
+      .filter((t) => t.text.trim())
+      .slice(-6)
+      .map((t) => ({ role: t.role, content: t.text }));
+
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ query: q }),
+        body: JSON.stringify({ query: q, history }),
       });
 
       let sources: Source[] | undefined;

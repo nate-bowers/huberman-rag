@@ -54,10 +54,25 @@ type Source = {
   keyword_rank: number | null;
 };
 
+type ChatMsg = { role: "user" | "assistant"; content: string };
+
 export async function POST(req: Request) {
-  const { query } = await req.json();
+  const { query, history } = await req.json();
   if (!query || typeof query !== "string") return new Response("Missing query", { status: 400 });
   if (query.length > 500) return new Response("Query too long (max 500 chars)", { status: 413 });
+
+  // Recent conversation context (bounded), so follow-ups like "what about 5mg of it"
+  // resolve. Used both to enrich retrieval and to ground generation.
+  const hist: ChatMsg[] = Array.isArray(history)
+    ? history
+        .filter((h: any) => h && (h.role === "user" || h.role === "assistant") && typeof h.content === "string")
+        .slice(-6)
+        .map((h: any) => ({ role: h.role, content: h.content.slice(0, 800) }))
+    : [];
+  const prevUserQ = [...hist].reverse().find((h) => h.role === "user")?.content;
+  // Prepend the previous question to the retrieval query so a context-free
+  // follow-up still retrieves the right chunks. (No extra LLM call.)
+  const retrievalQuery = prevUserQ ? `${prevUserQ}\n${query}` : query;
 
   // 0. Rate limit (per IP).
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "anon";
@@ -67,7 +82,7 @@ export async function POST(req: Request) {
   // 1. Embed query via HF (reused for cache lookup + retrieval).
   let queryEmbedding: number[];
   try {
-    queryEmbedding = await embedQueryRemote(query);
+    queryEmbedding = await embedQueryRemote(retrievalQuery);
   } catch (e: any) {
     return new Response(`Embedding error: ${e?.message ?? e}`, { status: 502 });
   }
@@ -85,7 +100,7 @@ export async function POST(req: Request) {
   const supabase = publicClient();
   const { data: matches, error } = await supabase.rpc("match_hybrid", {
     query_embedding: queryEmbedding,
-    query_text: query,
+    query_text: retrievalQuery,
     match_count: POOL,
   });
   if (error) return new Response(`Retrieval error: ${error.message}`, { status: 500 });
@@ -100,7 +115,7 @@ export async function POST(req: Request) {
   // 3b. Cross-encoder rerank (HF) → top K. Falls back to hybrid order on failure.
   let topSources = pool.slice(0, TOP_K);
   try {
-    const ranked = await rerankRemote(query, pool.map((s) => ({ id: s.id, text: s.content })));
+    const ranked = await rerankRemote(retrievalQuery, pool.map((s) => ({ id: s.id, text: s.content })));
     const byId = new Map(pool.map((s) => [s.id, s]));
     topSources = ranked.slice(0, TOP_K).map((r) => byId.get(r.id)!);
     // Confidence guardrail: nothing relevant → don't force an answer.
@@ -126,6 +141,7 @@ export async function POST(req: Request) {
     "- Be specific: name protocols, durations, and mechanisms when the excerpts give them.\n" +
     "- Use light Markdown: short paragraphs, **bold** for key terms, and '- ' bullet lists where helpful.\n" +
     "- Be concise and clear. Do not invent studies, numbers, or recommendations.\n" +
+    "- Use the prior conversation to resolve references (e.g. 'it', 'that dose').\n" +
     "- After the answer, output a line containing exactly '###FOLLOWUPS###', then 3 short follow-up " +
     "questions a curious listener might ask next (one per line, starting with '- '), each answerable " +
     "from this podcast.";
@@ -135,7 +151,12 @@ export async function POST(req: Request) {
   const result = streamText({
     model: groq(model),
     system,
-    prompt: `Question: ${query}\n\nExcerpts:\n${context}\n\nAnswer (with [n] citations):`,
+    // Prior turns give the model context to resolve follow-ups; the final user
+    // message carries the freshly retrieved excerpts for this question.
+    messages: [
+      ...hist,
+      { role: "user", content: `Question: ${query}\n\nExcerpts:\n${context}\n\nAnswer (with [n] citations):` },
+    ],
     temperature: 0.3,
     maxRetries: 4,
   });
