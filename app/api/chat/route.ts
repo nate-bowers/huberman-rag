@@ -137,18 +137,19 @@ export async function POST(req: Request) {
           full += delta;
           controller.enqueue(encoder.encode(delta));
         }
-      } catch (e: any) {
-        // Generation failed (e.g. LLM rate limit) — emit a message, never empty.
-        const msg =
-          full.length === 0
-            ? "The answer service is briefly rate-limited. Please try again in a moment."
-            : "\n\n[Answer was cut off — the LLM service is rate-limited. Please retry.]";
-        controller.enqueue(encoder.encode(msg));
+      } catch {
+        /* fall through to the empty-check below */
+      }
+      if (!full.trim()) {
+        // Generation produced nothing (e.g. LLM rate limit, with or without a
+        // thrown error) — never return an empty body.
+        controller.enqueue(
+          encoder.encode("The answer service is briefly rate-limited. Please try again in a moment.")
+        );
         controller.close();
         return;
       }
-      // Only cache complete, non-empty answers.
-      if (full.trim()) await setCachedAnswer(queryEmbedding, { answer: full, sources: headerSources, query });
+      await setCachedAnswer(queryEmbedding, { answer: full, sources: headerSources, query });
       controller.close();
     },
   });
