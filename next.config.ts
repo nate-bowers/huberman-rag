@@ -8,9 +8,9 @@ const nextConfig: NextConfig = {
   // while keeping the native backend (more reliable than WASM in the function).
   outputFileTracingExcludes: {
     "*": [
-      "node_modules/.pnpm/onnxruntime-node*/node_modules/onnxruntime-node/bin/napi-v3/darwin/**",
-      "node_modules/.pnpm/onnxruntime-node*/node_modules/onnxruntime-node/bin/napi-v3/win32/**",
-      "node_modules/.pnpm/onnxruntime-node*/node_modules/onnxruntime-node/bin/napi-v3/linux/arm64/**",
+      "**/onnxruntime-node/bin/napi-v3/darwin/**",
+      "**/onnxruntime-node/bin/napi-v3/win32/**",
+      "**/onnxruntime-node/bin/napi-v3/linux/arm64/**",
     ],
   },
 };
