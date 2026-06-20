@@ -28,7 +28,7 @@ function splitFollowups(raw: string): { answer: string; followups: string[] } {
   const followups = raw
     .slice(idx + FOLLOWUPS_DELIM.length)
     .split(/\n/)
-    .map((l) => l.replace(/^\s*[-*\d.]+\s*/, "").trim())
+    .map((l) => l.replace(/^[\s\-*•–—\d.]+/, "").trim())
     .filter((l) => l.length > 3)
     .slice(0, 3);
   return { answer, followups };
@@ -65,6 +65,7 @@ function renderMarkdown(text: string, sources?: Source[]) {
   let list: Block | null = null;
   const flush = () => { if (list) { blocks.push(list); list = null; } };
   for (const line of lines) {
+    if (/^\s*([-*_])\1{2,}\s*$/.test(line)) { flush(); continue; } // skip --- rules
     const ul = line.match(/^\s*[-*•]\s+(.*)/);
     const ol = line.match(/^\s*\d+\.\s+(.*)/);
     if (ul) { if (!list || list.type !== "ul") { flush(); list = { type: "ul", lines: [] }; } list.lines.push(ul[1]); }
