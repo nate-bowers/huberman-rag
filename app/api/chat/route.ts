@@ -19,14 +19,15 @@ import { embedQueryRemote } from "@/lib/inference";
 import { publicClient } from "@/lib/supabase";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { getCachedAnswer, setCachedAnswer } from "@/lib/cache";
-import { rerankRemote } from "@/lib/rerank-remote";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const POOL = 24; // hybrid candidates handed to the reranker
-const TOP_K = 6; // kept after reranking
-const RERANK_MIN_SCORE = 0.02; // low guardrail: refuse only when nothing is relevant
+// Hybrid (semantic + keyword, RRF) is the default retriever: the 100-question
+// eval showed a cross-encoder reranker did not improve results on this corpus
+// (it slightly hurt top-rank precision) while adding latency, so it's kept in
+// the eval/offline path only — see lib/rerank.ts and the README iteration log.
+const TOP_K = 6;
 
 function fmtTime(s: number | null): string {
   if (s == null) return "";
@@ -96,36 +97,20 @@ export async function POST(req: Request) {
     });
   }
 
-  // 3. Hybrid retrieve a wide pool (semantic + keyword, RRF) via Supabase RPC.
+  // 3. Hybrid retrieve (semantic + keyword, RRF) via Supabase RPC.
   const supabase = publicClient();
   const { data: matches, error } = await supabase.rpc("match_hybrid", {
     query_embedding: queryEmbedding,
     query_text: retrievalQuery,
-    match_count: POOL,
+    match_count: TOP_K,
   });
   if (error) return new Response(`Retrieval error: ${error.message}`, { status: 500 });
 
-  const pool = (matches ?? []) as Source[];
-  if (pool.length === 0) {
+  const topSources = (matches ?? []) as Source[];
+  if (topSources.length === 0) {
     return textStream(
       "I couldn't find anything about that in the Huberman Lab episodes I've indexed. Try a topic he's covered — sleep, dopamine, focus, fitness, etc."
     );
-  }
-
-  // 3b. Cross-encoder rerank (HF) → top K. Falls back to hybrid order on failure.
-  let topSources = pool.slice(0, TOP_K);
-  try {
-    const ranked = await rerankRemote(retrievalQuery, pool.map((s) => ({ id: s.id, text: s.content })));
-    const byId = new Map(pool.map((s) => [s.id, s]));
-    topSources = ranked.slice(0, TOP_K).map((r) => byId.get(r.id)!);
-    // Confidence guardrail: nothing relevant → don't force an answer.
-    if ((ranked[0]?.score ?? 0) < RERANK_MIN_SCORE) {
-      return textStream(
-        "I don't think the Huberman Lab episodes I've indexed clearly cover that. Try rewording, or ask about a related topic he discusses."
-      );
-    }
-  } catch {
-    /* rerank unavailable → keep hybrid order */
   }
 
   // 4. Grounded generation.

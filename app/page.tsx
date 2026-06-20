@@ -310,7 +310,7 @@ export default function Home() {
           <div className="disclaimer">
             Educational summaries of podcast content — not medical advice.
           </div>
-          Hybrid retrieval + cross-encoder reranking ·{" "}
+          Hybrid (semantic + keyword) retrieval ·{" "}
           <a href={GITHUB_URL} target="_blank" rel="noreferrer">
             free &amp; open source
           </a>

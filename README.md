@@ -57,7 +57,7 @@ flowchart LR
 
 **Vector store.** Supabase gives vector search (pgvector) and full-text search (`tsvector`) in one database, so hybrid fusion runs server-side in a single SQL function rather than being stitched together in app code.
 
-**Retrieval quality.** Three layers, in order of impact: hybrid retrieval (semantic for meaning, keyword for exact terms) fused with RRF; contextual retrieval (each chunk carries a one-line episode overview); and a cross-encoder reranker over the hybrid candidates.
+**Retrieval quality.** Hybrid retrieval (semantic for meaning, keyword for exact terms) fused with RRF, plus contextual retrieval — each chunk carries a one-line episode overview so it keeps its context. A cross-encoder reranker was added and measured, but it didn't beat plain hybrid on this corpus, so it stays in the offline harness rather than the live path (see the iteration log).
 
 **Hallucination.** The model answers only from retrieved excerpts, cites every claim, and says so when the excerpts don't cover the question. A guardrail refuses when nothing relevant is retrieved, and an LLM judge scores answer-vs-context faithfulness in the eval.
 
@@ -66,13 +66,18 @@ flowchart LR
 Questions are scored by an LLM judge over the pooled candidates of every method, so the comparison isn't biased toward lexical matching. Metrics: precision@1, hit-rate, MRR, nDCG.
 
 <!-- EVAL_RESULTS -->
+100 questions (easy/medium/hard), k=6:
+
 | method | P@1 | hit@6 | MRR | nDCG@6 |
 |---|---|---|---|---|
-| semantic only | 66.7% | 100.0% | 0.803 | 0.712 |
-| keyword only | 72.2% | 94.4% | 0.824 | 0.632 |
-| **hybrid (RRF)** | **77.8%** | **100.0%** | **0.875** | **0.732** |
+| semantic | **81.0%** | 98.0% | **0.887** | 0.733 |
+| keyword | 69.0% | 90.0% | 0.771 | 0.590 |
+| hybrid (RRF) | 77.0% | **99.0%** | 0.871 | **0.741** |
+| hybrid + reranker | 67.0% | 99.0% | 0.819 | 0.725 |
 
-Faithfulness (LLM-judged): 0.82. Hybrid wins every ranking metric; keyword-only has the weakest hit-rate and nDCG.
+Faithfulness (LLM-judged): 0.80.
+
+Semantic and hybrid are both strong (hybrid takes hit-rate and nDCG; semantic edges top-rank precision); keyword alone clearly lags. The cross-encoder reranker did **not** help on this corpus — it lowered P@1 — so the live app uses hybrid retrieval and the reranker stays in this offline harness. See the iteration log below.
 <!-- /EVAL_RESULTS -->
 
 ```bash
@@ -114,5 +119,14 @@ Run: `pnpm dev`
 
 - Timestamps are estimated from word position (~150 wpm); transcripts have no time codes. Exact timestamps would require aligning YouTube captions.
 - Contextual retrieval is episode-scoped (one overview per episode) to fit free-tier LLM limits.
-- The reranker runs in the eval and locally; the deployed serverless function uses hybrid retrieval and embeds the query via the HF Inference API, because bundling the ONNX runtime exceeds Vercel's 250 MB function limit.
+- Query embedding on the deployed app goes through the HF Inference API (same bge-small model), because bundling the ONNX runtime would exceed Vercel's 250 MB function limit.
+- The cross-encoder reranker is offline-only — it didn't improve retrieval in the eval (see iteration log).
 - Transcripts are not included in this repo (copyright); the pipeline expects them in `huberman_transcripts/`.
+
+## Iteration log
+
+**v1 — first pass.** Hybrid (semantic + keyword, RRF) + contextual retrieval, sanity-checked on 18 LLM-judged questions. That run made hybrid look like a clear winner over semantic and keyword.
+
+**v2 — bigger eval + a reranker.** Two changes: scaled the eval to 100 questions across easy/medium/hard (the 18-question set was too small to trust), and added a `bge-reranker-base` cross-encoder as a second stage.
+
+The larger eval changed the story. At 100 questions, semantic and hybrid are effectively tied — hybrid wins hit-rate and nDCG, semantic edges top-rank precision — and keyword alone clearly lags. The headline though: the **reranker didn't help** — it lowered P@1 (67% vs hybrid's 77%) while adding latency. So the live app stays on hybrid retrieval and the reranker is kept in the offline harness. Two takeaways: small evals are noisy enough to mislead, and a technique that "should" help is worth measuring before shipping.

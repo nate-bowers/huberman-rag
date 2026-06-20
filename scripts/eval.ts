@@ -63,18 +63,25 @@ async function judgeRelevance(q: string, row: Row): Promise<0 | 1> {
   const key = `${q}::${row.id}`; // keyed by question text, robust to reordering
   if (key in judgments) return judgments[key];
   await pace(350);
-  const { text, usage } = await generateText({
-    model: groq(JUDGE_MODEL),
-    temperature: 0,
-    maxRetries: 6,
-    prompt:
-      `Is the excerpt RELEVANT to answering the question (does it contain information that helps answer it)? ` +
-      `Reply with only YES or NO.\n\nQuestion: ${q}\n\nExcerpt: ${words(row.text, 120)}`,
-  });
-  tokenLog.push({ t: Date.now(), tokens: usage?.totalTokens ?? 350 });
-  const rel: 0 | 1 = /yes/i.test(text) ? 1 : 0;
-  judgments[key] = rel;
-  return rel;
+  try {
+    const { text, usage } = await generateText({
+      model: groq(JUDGE_MODEL),
+      temperature: 0,
+      maxRetries: 6,
+      prompt:
+        `Is the excerpt RELEVANT to answering the question (does it contain information that helps answer it)? ` +
+        `Reply with only YES or NO.\n\nQuestion: ${q}\n\nExcerpt: ${words(row.text, 120)}`,
+    });
+    tokenLog.push({ t: Date.now(), tokens: usage?.totalTokens ?? 350 });
+    const rel: 0 | 1 = /yes/i.test(text) ? 1 : 0;
+    judgments[key] = rel;
+    return rel;
+  } catch (e: any) {
+    // A single failed judge call must not crash the whole run. Treat as not
+    // relevant for this pass and don't cache, so a re-run can retry it.
+    console.warn(`  ! judge failed (treating as 0): ${e?.message ?? e}`);
+    return 0;
+  }
 }
 
 // ── metrics ──────────────────────────────────────────────────────────────────
