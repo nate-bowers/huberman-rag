@@ -1,27 +1,29 @@
 /**
- * Retrieval + generation endpoint.
+ * Retrieval + generation endpoint (serverless-friendly).
  *
- *   rate-limit → embed query → semantic-cache lookup
- *     → hybrid retrieve (RRF) → cross-encoder rerank → confidence guardrail
- *     → stream grounded, cited answer → store in semantic cache
+ *   rate-limit → embed query (HF API) → semantic-cache lookup
+ *     → hybrid retrieve (RRF) → grounded, cited answer → store in cache
+ *
+ * NOTE: the cross-encoder reranker (lib/rerank.ts) is NOT run here — bundling its
+ * ONNX runtime exceeds Vercel's 250MB function limit. Reranking is exercised in
+ * the eval harness (where its gains are measured) and runs locally. The live
+ * function uses hybrid RRF retrieval and embeds the query via the HF Inference
+ * API (same bge-small model as ingest, so vectors share one space).
  *
  * Sources ride in the `x-sources` response header (base64 JSON) so the client can
  * render source cards immediately while the answer streams in the body.
  */
 import { createGroq } from "@ai-sdk/groq";
 import { streamText } from "ai";
-import { embedQuery } from "@/lib/embeddings";
+import { embedQueryRemote } from "@/lib/inference";
 import { publicClient } from "@/lib/supabase";
-import { rerank } from "@/lib/rerank";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { getCachedAnswer, setCachedAnswer } from "@/lib/cache";
 
 export const runtime = "nodejs";
-export const maxDuration = 300; // WASM model load + rerank can be slow on cold start
+export const maxDuration = 60;
 
-const POOL = 30; // hybrid candidates fed to the reranker
-const TOP_K = 6; // kept after reranking
-const RERANK_MIN_SCORE = 0.02; // low guardrail: only block when nothing is relevant
+const TOP_K = 6;
 
 function fmtTime(s: number | null): string {
   if (s == null) return "";
@@ -59,8 +61,13 @@ export async function POST(req: Request) {
   const rl = await checkRateLimit(ip);
   if (!rl.ok) return new Response("Rate limit exceeded — try again in a minute.", { status: 429 });
 
-  // 1. Embed query (reused for cache lookup + retrieval).
-  const queryEmbedding = await embedQuery(query);
+  // 1. Embed query via HF (reused for cache lookup + retrieval).
+  let queryEmbedding: number[];
+  try {
+    queryEmbedding = await embedQueryRemote(query);
+  } catch (e: any) {
+    return new Response(`Embedding error: ${e?.message ?? e}`, { status: 502 });
+  }
 
   // 2. Semantic cache: reuse a previous answer to a near-identical question.
   const cached = await getCachedAnswer(queryEmbedding);
@@ -71,42 +78,23 @@ export async function POST(req: Request) {
     });
   }
 
-  // 3. Hybrid retrieve a wide pool.
+  // 3. Hybrid retrieve (semantic + keyword, RRF) via Supabase RPC.
   const supabase = publicClient();
   const { data: matches, error } = await supabase.rpc("match_hybrid", {
     query_embedding: queryEmbedding,
     query_text: query,
-    match_count: POOL,
+    match_count: TOP_K,
   });
   if (error) return new Response(`Retrieval error: ${error.message}`, { status: 500 });
 
-  let pool = (matches ?? []) as Source[];
-  if (pool.length === 0) {
+  const topSources = (matches ?? []) as Source[];
+  if (topSources.length === 0) {
     return textStream(
       "I couldn't find anything about that in the Huberman Lab episodes I've indexed. Try a topic he's covered — sleep, dopamine, focus, fitness, etc."
     );
   }
 
-  // 4. Cross-encoder rerank → top K. Falls back to hybrid order if rerank fails.
-  let topSources = pool.slice(0, TOP_K);
-  let topScore = 1;
-  try {
-    const ranked = await rerank(query, pool.map((s) => ({ id: s.id, text: s.content })));
-    topScore = ranked[0]?.score ?? 0;
-    const byId = new Map(pool.map((s) => [s.id, s]));
-    topSources = ranked.slice(0, TOP_K).map((r) => byId.get(r.id)!);
-
-    // 5. Confidence guardrail (low threshold): nothing relevant → don't force it.
-    if (topScore < RERANK_MIN_SCORE) {
-      return textStream(
-        "I don't think the Huberman Lab episodes I've indexed clearly cover that. Try rewording, or ask about a related topic he discusses."
-      );
-    }
-  } catch {
-    /* rerank unavailable → keep hybrid order */
-  }
-
-  // 6. Grounded generation.
+  // 4. Grounded generation.
   const context = topSources
     .map((s, i) => `[${i + 1}] Episode: "${s.title}" (${s.date}${s.est_seconds != null ? `, ~${fmtTime(s.est_seconds)}` : ""})\n${s.content}`)
     .join("\n\n");
@@ -147,7 +135,6 @@ export async function POST(req: Request) {
         full += delta;
         controller.enqueue(encoder.encode(delta));
       }
-      // 7. Store in the semantic cache (best-effort) before closing.
       await setCachedAnswer(queryEmbedding, { answer: full, sources: headerSources, query });
       controller.close();
     },
