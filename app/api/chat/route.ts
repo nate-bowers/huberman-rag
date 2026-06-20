@@ -114,6 +114,7 @@ export async function POST(req: Request) {
     system,
     prompt: `Question: ${query}\n\nExcerpts:\n${context}\n\nAnswer (with [n] citations):`,
     temperature: 0.3,
+    maxRetries: 4,
   });
 
   const headerSources = topSources.map((s, i) => ({
@@ -131,11 +132,23 @@ export async function POST(req: Request) {
   const stream = new ReadableStream({
     async start(controller) {
       let full = "";
-      for await (const delta of result.textStream) {
-        full += delta;
-        controller.enqueue(encoder.encode(delta));
+      try {
+        for await (const delta of result.textStream) {
+          full += delta;
+          controller.enqueue(encoder.encode(delta));
+        }
+      } catch (e: any) {
+        // Generation failed (e.g. LLM rate limit) — emit a message, never empty.
+        const msg =
+          full.length === 0
+            ? "The answer service is briefly rate-limited. Please try again in a moment."
+            : "\n\n[Answer was cut off — the LLM service is rate-limited. Please retry.]";
+        controller.enqueue(encoder.encode(msg));
+        controller.close();
+        return;
       }
-      await setCachedAnswer(queryEmbedding, { answer: full, sources: headerSources, query });
+      // Only cache complete, non-empty answers.
+      if (full.trim()) await setCachedAnswer(queryEmbedding, { answer: full, sources: headerSources, query });
       controller.close();
     },
   });
