@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Huberman RAG",
-  description: "Ask questions across every Huberman Lab podcast episode — answered with cited, timestamped sources.",
+  title: "Huberman GPT",
+  description: "Search 800+ hours of the Huberman Lab podcast — grounded answers with cited, timestamped sources.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

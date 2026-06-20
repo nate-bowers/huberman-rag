@@ -15,6 +15,35 @@ type Source = {
 
 type Turn = { role: "user" | "assistant"; text: string; sources?: Source[] };
 
+const GITHUB_URL = "https://github.com/nate-bowers/huberman-rag";
+
+// Render an answer with [n] turned into clickable links to the matching source.
+function renderAnswer(text: string, sources?: Source[]) {
+  const parts = text.split(/(\[\d+\])/g);
+  return parts.map((p, i) => {
+    const m = p.match(/^\[(\d+)\]$/);
+    if (m && sources) {
+      const src = sources.find((s) => s.n === Number(m[1]));
+      if (src)
+        return (
+          <a key={i} className="cite" href={src.url} target="_blank" rel="noreferrer" title={src.title}>
+            {p}
+          </a>
+        );
+    }
+    return <span key={i}>{p}</span>;
+  });
+}
+
+// Decorative animated EKG line for the hero background.
+function HeroWave() {
+  return (
+    <svg className="herowave" viewBox="0 0 1200 200" preserveAspectRatio="none" aria-hidden>
+      <path d="M0 100 H300 L330 100 L360 40 L395 165 L425 70 L450 130 L475 100 H720 L745 100 L770 55 L800 150 L828 85 L852 118 L876 100 H1200" />
+    </svg>
+  );
+}
+
 const EXAMPLES = [
   "What's the protocol for morning sunlight and circadian rhythm?",
   "How should I use deliberate cold exposure?",
@@ -42,7 +71,7 @@ function Logo({ small = false }: { small?: boolean }) {
         </svg>
       </span>
       <span className="word">
-        Huberman <span className="rag">RAG</span>
+        Huberman <span className="rag">GPT</span>
       </span>
     </span>
   );
@@ -182,11 +211,12 @@ export default function Home() {
   if (hero) {
     return (
       <div className="page">
+        <HeroWave />
         <div className="hero">
           <Logo />
           <p className="tagline">
-            Ask anything across 342 Huberman Lab episodes. Grounded answers with cited,
-            timestamped sources.
+            Search <strong>800+ hours</strong> of the Huberman Lab podcast — answered with cited,
+            timestamped sources, grounded in the transcripts.
           </p>
           {SearchBox}
           <div className="chips">
@@ -197,7 +227,12 @@ export default function Home() {
             ))}
           </div>
         </div>
-        <div className="foot">Hybrid (semantic + keyword) retrieval · free &amp; open source</div>
+        <div className="foot">
+          Hybrid (semantic + keyword) retrieval ·{" "}
+          <a href={GITHUB_URL} target="_blank" rel="noreferrer">
+            free &amp; open source
+          </a>
+        </div>
       </div>
     );
   }
@@ -216,7 +251,11 @@ export default function Home() {
           <div className="msg" key={i}>
             <div className="role">{turn.role === "user" ? "You" : "Huberman RAG"}</div>
             <div className={`bubble ${turn.role}`}>
-              {turn.text || (turn.role === "assistant" ? "…" : "")}
+              {turn.role === "assistant"
+                ? turn.text
+                  ? renderAnswer(turn.text, turn.sources)
+                  : <span className="thinking"><span></span><span></span><span></span></span>
+                : turn.text}
             </div>
             {turn.sources && turn.sources.length > 0 && (
               <div className="sources">
