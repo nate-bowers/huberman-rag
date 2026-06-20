@@ -120,11 +120,28 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [placeholder, setPlaceholder] = useState("");
+  const [meta, setMeta] = useState<{ date: string; title: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const currentQRef = useRef(""); // full question currently shown in the typewriter
 
   const hero = turns.length === 0;
+
+  // Most recent episode in the index (shown as a freshness indicator).
+  useEffect(() => {
+    fetch("/api/meta")
+      .then((r) => r.json())
+      .then((m) => m?.ok && setMeta({ date: m.date, title: m.title }))
+      .catch(() => {});
+  }, []);
+
+  const updatedNote = meta
+    ? `Updated through ${new Date(meta.date + "T00:00:00").toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })} · latest: ${meta.title}`
+    : null;
 
   // The typewriter cycles example questions on the home screen, and the latest
   // answer's follow-up suggestions once a conversation is going.
@@ -283,10 +300,11 @@ export default function Home() {
           </div>
         </div>
         <div className="foot">
+          {updatedNote && <div className="updated">{updatedNote}</div>}
           <div className="disclaimer">
             Educational summaries of podcast content — not medical advice.
           </div>
-          Hybrid (semantic + keyword) retrieval ·{" "}
+          Hybrid retrieval + cross-encoder reranking ·{" "}
           <a href={GITHUB_URL} target="_blank" rel="noreferrer">
             free &amp; open source
           </a>
