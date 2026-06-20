@@ -1,16 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Keep transformers.js out of the webpack bundle (it loads native/wasm at runtime).
-  serverExternalPackages: ["@huggingface/transformers"],
-  // onnxruntime-node ships ~400MB of native binaries for every platform and blows
-  // past Vercel's 250MB function limit. The serverless query path uses the WASM
-  // backend instead (see lib/embeddings.ts), so exclude the native package.
+  // Keep transformers.js + its native onnx backend out of the webpack bundle.
+  serverExternalPackages: ["@huggingface/transformers", "onnxruntime-node"],
+  // onnxruntime-node ships native binaries for 6 platforms (~165MB of waste).
+  // Vercel runs Linux x64, so drop the other five to fit the 250MB function limit
+  // while keeping the native backend (more reliable than WASM in the function).
   outputFileTracingExcludes: {
     "*": [
-      "node_modules/.pnpm/onnxruntime-node*/**",
-      "node_modules/onnxruntime-node/**",
-      "node_modules/@img/sharp-libvips*/**",
+      "node_modules/.pnpm/onnxruntime-node*/node_modules/onnxruntime-node/bin/napi-v3/darwin/**",
+      "node_modules/.pnpm/onnxruntime-node*/node_modules/onnxruntime-node/bin/napi-v3/win32/**",
+      "node_modules/.pnpm/onnxruntime-node*/node_modules/onnxruntime-node/bin/napi-v3/linux/arm64/**",
     ],
   },
 };

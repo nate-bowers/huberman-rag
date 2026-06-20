@@ -13,11 +13,10 @@ import { pipeline, env, type FeatureExtractionPipeline } from "@huggingface/tran
 export const EMBED_MODEL = "Xenova/bge-small-en-v1.5";
 export const EMBED_DIM = 384;
 
-// On Vercel, the native onnxruntime-node package is excluded from the bundle
-// (too large), so use the WASM backend, and cache model files in /tmp (the only
-// writable dir). Locally (ingest), the default native backend is used — faster.
-const ON_VERCEL = Boolean(process.env.VERCEL);
-if (ON_VERCEL) {
+// On Vercel, model files are downloaded at runtime; only /tmp is writable, so
+// point the cache there. The native onnx backend is used (pruned to linux-x64
+// in next.config.ts).
+if (process.env.VERCEL) {
   env.cacheDir = "/tmp/transformers-cache";
 }
 
@@ -33,8 +32,7 @@ function getExtractor(): Promise<FeatureExtractionPipeline> {
   if (!extractorPromise) {
     extractorPromise = pipeline(
       "feature-extraction",
-      EMBED_MODEL,
-      ON_VERCEL ? { device: "wasm" } : undefined
+      EMBED_MODEL
     ) as unknown as Promise<FeatureExtractionPipeline>;
   }
   return extractorPromise;

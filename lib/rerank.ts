@@ -12,12 +12,13 @@
 import {
   AutoTokenizer,
   AutoModelForSequenceClassification,
+  env,
   type PreTrainedTokenizer,
   type PreTrainedModel,
 } from "@huggingface/transformers";
 
 const RERANK_MODEL = "Xenova/bge-reranker-base";
-const ON_VERCEL = Boolean(process.env.VERCEL);
+if (process.env.VERCEL) env.cacheDir = "/tmp/transformers-cache";
 
 let tokenizerPromise: Promise<PreTrainedTokenizer> | null = null;
 let modelPromise: Promise<PreTrainedModel> | null = null;
@@ -26,8 +27,7 @@ function load() {
   if (!tokenizerPromise) {
     tokenizerPromise = AutoTokenizer.from_pretrained(RERANK_MODEL);
     modelPromise = AutoModelForSequenceClassification.from_pretrained(
-      RERANK_MODEL,
-      ON_VERCEL ? { device: "wasm" } : undefined
+      RERANK_MODEL
     ) as Promise<PreTrainedModel>;
   }
   return Promise.all([tokenizerPromise, modelPromise!]);
