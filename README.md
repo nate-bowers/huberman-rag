@@ -91,7 +91,7 @@ pnpm search "how should I use cold exposure?"
 |---|---|---|
 | Embeddings | bge-small-en-v1.5, local (ingest) / HF Inference API (query) | $0 |
 | Vector + keyword store | Supabase — pgvector (HNSW) + Postgres FTS | $0 |
-| LLM | Groq free tier (Llama 3.x) | $0 |
+| LLM | Groq free tier (gpt-oss-120b) | $0 |
 | Rate limit + cache | Upstash Redis + Vector | $0 |
 | Hosting | Next.js on Vercel | $0 |
 
