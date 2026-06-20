@@ -105,7 +105,11 @@ export async function POST(req: Request) {
     "- Answer strictly from the excerpts. If they don't contain the answer, say so plainly.\n" +
     "- Cite sources inline with bracketed numbers like [1], [2] that map to the excerpts.\n" +
     "- Be specific: name protocols, durations, and mechanisms when the excerpts give them.\n" +
-    "- Be concise and clear. Do not invent studies, numbers, or recommendations.";
+    "- Use light Markdown: short paragraphs, **bold** for key terms, and '- ' bullet lists where helpful.\n" +
+    "- Be concise and clear. Do not invent studies, numbers, or recommendations.\n" +
+    "- After the answer, output a line containing exactly '###FOLLOWUPS###', then 3 short follow-up " +
+    "questions a curious listener might ask next (one per line, starting with '- '), each answerable " +
+    "from this podcast.";
 
   const groq = createGroq({ apiKey: process.env.GROQ_API_KEY });
   const model = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";

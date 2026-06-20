@@ -13,25 +13,63 @@ type Source = {
   keyword_rank: number | null;
 };
 
-type Turn = { role: "user" | "assistant"; text: string; sources?: Source[] };
+type Turn = { role: "user" | "assistant"; text: string; sources?: Source[]; followups?: string[] };
+
+function splitFollowups(raw: string): { answer: string; followups: string[] } {
+  const idx = raw.indexOf(FOLLOWUPS_DELIM);
+  if (idx === -1) return { answer: raw, followups: [] };
+  const answer = raw.slice(0, idx).trimEnd();
+  const followups = raw
+    .slice(idx + FOLLOWUPS_DELIM.length)
+    .split(/\n/)
+    .map((l) => l.replace(/^\s*[-*\d.]+\s*/, "").trim())
+    .filter((l) => l.length > 3)
+    .slice(0, 3);
+  return { answer, followups };
+}
 
 const GITHUB_URL = "https://github.com/nate-bowers/huberman-rag";
+const FOLLOWUPS_DELIM = "###FOLLOWUPS###";
 
-// Render an answer with [n] turned into clickable links to the matching source.
-function renderAnswer(text: string, sources?: Source[]) {
-  const parts = text.split(/(\[\d+\])/g);
-  return parts.map((p, i) => {
-    const m = p.match(/^\[(\d+)\]$/);
-    if (m && sources) {
-      const src = sources.find((s) => s.n === Number(m[1]));
+// Inline: **bold** and [n] citation links.
+function inlineRender(text: string, sources: Source[] | undefined, key: string) {
+  const tokens = text.split(/(\*\*[^*]+\*\*|\[\d+\])/g);
+  return tokens.map((t, i) => {
+    let m = t.match(/^\*\*([^*]+)\*\*$/);
+    if (m) return <strong key={`${key}-${i}`}>{m[1]}</strong>;
+    m = t.match(/^\[(\d+)\]$/);
+    if (m) {
+      const src = sources?.find((s) => s.n === Number(m![1]));
       if (src)
         return (
-          <a key={i} className="cite" href={src.url} target="_blank" rel="noreferrer" title={src.title}>
-            {p}
+          <a key={`${key}-${i}`} className="cite" href={src.url} target="_blank" rel="noreferrer" title={src.title}>
+            {t}
           </a>
         );
     }
-    return <span key={i}>{p}</span>;
+    return <span key={`${key}-${i}`}>{t}</span>;
+  });
+}
+
+// Light Markdown: paragraphs + bullet/numbered lists, with inline formatting.
+function renderMarkdown(text: string, sources?: Source[]) {
+  const lines = text.split(/\n/);
+  type Block = { type: "p" | "ul" | "ol"; lines: string[] };
+  const blocks: Block[] = [];
+  let list: Block | null = null;
+  const flush = () => { if (list) { blocks.push(list); list = null; } };
+  for (const line of lines) {
+    const ul = line.match(/^\s*[-*•]\s+(.*)/);
+    const ol = line.match(/^\s*\d+\.\s+(.*)/);
+    if (ul) { if (!list || list.type !== "ul") { flush(); list = { type: "ul", lines: [] }; } list.lines.push(ul[1]); }
+    else if (ol) { if (!list || list.type !== "ol") { flush(); list = { type: "ol", lines: [] }; } list.lines.push(ol[1]); }
+    else { flush(); if (line.trim()) blocks.push({ type: "p", lines: [line] }); }
+  }
+  flush();
+  return blocks.map((b, i) => {
+    if (b.type === "p") return <p key={i}>{inlineRender(b.lines[0], sources, `p${i}`)}</p>;
+    const items = b.lines.map((l, j) => <li key={j}>{inlineRender(l, sources, `l${i}-${j}`)}</li>);
+    return b.type === "ul" ? <ul key={i}>{items}</ul> : <ol key={i}>{items}</ol>;
   });
 }
 
@@ -84,8 +122,15 @@ export default function Home() {
   const [placeholder, setPlaceholder] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const currentQRef = useRef(""); // full question currently shown in the typewriter
 
   const hero = turns.length === 0;
+
+  // The typewriter cycles example questions on the home screen, and the latest
+  // answer's follow-up suggestions once a conversation is going.
+  const lastFollowups = [...turns].reverse().find((t) => t.role === "assistant" && t.followups?.length)?.followups;
+  const cycle = !hero && lastFollowups && lastFollowups.length ? lastFollowups : EXAMPLES;
+  const cycleKey = cycle.join("|");
 
   // Typewriter placeholder: type a question, pause, delete, next — on loop.
   // Pauses while the user is typing or a request is in flight.
@@ -101,7 +146,8 @@ export default function Home() {
       if (!cancelled) timer = setTimeout(tick, ms);
     };
     function tick() {
-      const q = EXAMPLES[ei % EXAMPLES.length];
+      const q = cycle[ei % cycle.length];
+      currentQRef.current = q;
       if (!deleting) {
         ci++;
         setPlaceholder(q.slice(0, ci));
@@ -124,7 +170,7 @@ export default function Home() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [input, busy]);
+  }, [input, busy, cycleKey]);
 
   async function ask(q: string) {
     if (!q.trim() || busy) return;
@@ -159,13 +205,21 @@ export default function Home() {
         const { done, value } = await reader.read();
         if (done) break;
         acc += decoder.decode(value, { stream: true });
+        // Hide the follow-ups block while streaming (show only the answer part).
+        const shown = acc.split(FOLLOWUPS_DELIM)[0];
         setTurns((t) => {
           const c = [...t];
-          c[c.length - 1] = { ...c[c.length - 1], role: "assistant", text: acc, sources };
+          c[c.length - 1] = { ...c[c.length - 1], role: "assistant", text: shown, sources };
           return c;
         });
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
       }
+      const { answer, followups } = splitFollowups(acc);
+      setTurns((t) => {
+        const c = [...t];
+        c[c.length - 1] = { role: "assistant", text: answer, sources, followups };
+        return c;
+      });
     } catch {
       setTurns((t) => {
         const c = [...t];
@@ -183,7 +237,8 @@ export default function Home() {
         className="searchbox"
         onSubmit={(e) => {
           e.preventDefault();
-          ask(input);
+          // Empty input → ask the question currently shown in the typewriter.
+          ask(input.trim() || currentQRef.current);
         }}
       >
         <span className="glass" aria-hidden>
@@ -196,12 +251,12 @@ export default function Home() {
           ref={inputRef}
           type="text"
           value={input}
-          placeholder={hero ? placeholder || "Ask about sleep, focus, dopamine…" : "Ask a follow-up…"}
+          placeholder={placeholder || (hero ? "Ask about sleep, focus, dopamine…" : "Ask a follow-up…")}
           onChange={(e) => setInput(e.target.value)}
           disabled={busy}
           autoFocus
         />
-        <button type="submit" disabled={busy || !input.trim()}>
+        <button type="submit" disabled={busy}>
           {busy ? "…" : "Ask"}
         </button>
       </form>
@@ -228,6 +283,9 @@ export default function Home() {
           </div>
         </div>
         <div className="foot">
+          <div className="disclaimer">
+            Educational summaries of podcast content — not medical advice.
+          </div>
           Hybrid (semantic + keyword) retrieval ·{" "}
           <a href={GITHUB_URL} target="_blank" rel="noreferrer">
             free &amp; open source
@@ -253,7 +311,7 @@ export default function Home() {
             <div className={`bubble ${turn.role}`}>
               {turn.role === "assistant"
                 ? turn.text
-                  ? renderAnswer(turn.text, turn.sources)
+                  ? renderMarkdown(turn.text, turn.sources)
                   : <span className="thinking"><span></span><span></span><span></span></span>
                 : turn.text}
             </div>
@@ -280,7 +338,10 @@ export default function Home() {
         <div ref={bottomRef} />
       </div>
 
-      <div className="dock">{SearchBox}</div>
+      <div className="dock">
+        {SearchBox}
+        <div className="disclaimer dock-note">Educational summaries — not medical advice.</div>
+      </div>
     </div>
   );
 }

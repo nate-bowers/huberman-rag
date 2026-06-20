@@ -170,6 +170,18 @@ a { color: inherit; }
 .bubble.assistant a.cite { text-decoration: none; }
 .bubble.assistant a.cite:hover { text-decoration: underline; }
 
+/* markdown inside answers */
+.bubble.assistant p { margin: 0 0 10px; }
+.bubble.assistant p:last-child { margin-bottom: 0; }
+.bubble.assistant ul, .bubble.assistant ol { margin: 6px 0 10px; padding-left: 22px; }
+.bubble.assistant li { margin: 3px 0; }
+.bubble.assistant strong { color: var(--ink); font-weight: 700; }
+
+/* disclaimer */
+.disclaimer { color: var(--faint); font-size: 11.5px; }
+.foot .disclaimer { margin-bottom: 4px; }
+.dock-note { text-align: center; max-width: 680px; margin: 7px auto 0; }
+
 @media (max-width: 560px) {
   .logo .word { font-size: 22px; }
   .searchbox input { font-size: 16px; }
