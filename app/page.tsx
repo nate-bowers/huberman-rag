@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { track } from "@vercel/analytics";
 
 type Source = {
   n: number;
@@ -210,6 +211,10 @@ export default function Home() {
 
   async function ask(q: string) {
     if (!q.trim() || busy) return;
+    // Count each submitted question as a "prompt" event (DAU/WAU come from the
+    // built-in page-view tracking). `followup` lets us split first questions
+    // from in-conversation follow-ups in the Analytics dashboard.
+    track("prompt", { followup: turns.length > 0 });
     setBusy(true);
     setInput("");
     setTurns((t) => [...t, { role: "user", text: q }, { role: "assistant", text: "" }]);
